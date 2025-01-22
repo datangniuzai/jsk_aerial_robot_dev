@@ -67,15 +67,15 @@ def date_receive(address: str, *args: Any) -> None:
         print("Reception Error")
 
 
-# Set up an OSC dispatcher
-dispatcher: Dispatcher = Dispatcher()
-dispatcher.map("/v1/animation/slider/all", date_receive)
+if __name__ == "__main__":
+    # Set up an OSC dispatcher
+    dispatcher: Dispatcher = Dispatcher()
+    dispatcher.map("/v1/animation/slider/all", date_receive)
 
-# Update with your IP address and port number
-# ip: str = get_local_ip()
-ip: str = "127.0.0.1"
-port: int = 9400
-server: BlockingOSCUDPServer = BlockingOSCUDPServer((ip, port), dispatcher)
+    # Update with your IP address and port number
+    ip: str = get_local_ip()
+    port: int = 9400
+    server: BlockingOSCUDPServer = BlockingOSCUDPServer((ip, port), dispatcher)
 
-print("Listening for OSC messages...")
-server.serve_forever()
+    print("Listening for OSC messages...")
+    server.serve_forever()

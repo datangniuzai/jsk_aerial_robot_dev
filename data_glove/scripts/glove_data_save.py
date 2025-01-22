@@ -82,7 +82,7 @@ class GloveDataHandler:
                 ]
             )
             # Once 3000 data points are received, save them to the CSV file
-            if len(self.glove_data_save) == 3000:
+            if len(self.glove_data_save) == 200:
                 with open(self.csv_file_path, "a", newline="") as csvfile:
                     csvwriter = csv.writer(csvfile)
                     numpy_matrix = np.array(self.glove_data_save)
@@ -90,12 +90,11 @@ class GloveDataHandler:
                 self.glove_data_save = []  # Reset the data list
                 self.recording_times += 1  # Increment the recording count
                 print("Recording one time")
-                # Stop recording after 5 times
                 if self.recording_times == 5:
                     self.enable_record = False
                     print("Recording Over")
 
-        self.latest_data = args  # Update the latest data
+        self.latest_data = args
 
     def get_data(self) -> None:
         """
@@ -117,13 +116,14 @@ def main() -> None:
     2. Configures the dispatcher to handle incoming OSC messages.
     3. Starts the OSC server and begins receiving data.
     """
+    gesture_num: int = int(input("Gesture Number: "))
+
     glove_data_handler = GloveDataHandler()
+    glove_data_handler.csv_init(gesture_num)
 
     local_ip = get_local_ip()
     port: int = 9400
 
-    gesture_num: int = int(input("Gesture Number: "))
-    glove_data_handler.csv_init(gesture_num)
     dispatcher_instance = dispatcher.Dispatcher()
     dispatcher_instance.map("/v1/animation/slider/all", glove_data_handler.one_gesture_data_save)
     server = osc_server.BlockingOSCUDPServer((local_ip, port), dispatcher_instance)
@@ -131,4 +131,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()  # Execute the main function
+    main()
