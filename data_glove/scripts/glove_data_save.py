@@ -14,11 +14,12 @@ from base_receiver import get_local_ip
 
 
 class GloveDataHandler:
-    def __init__(self) -> None:
+    def __init__(self, gesture_num) -> None:
         """
         Constructor: Initializes the glove data handler.
         Initializes parameters related to data recording, the data storage list, and the CSV file path.
         """
+        self.gesture_num = gesture_num
         self.latest_data: list = []
         self.enable_record: bool = True
         self.recording_times: int = 0
@@ -50,6 +51,7 @@ class GloveDataHandler:
                     "Pinky.base",
                     "Pinky.middle",
                     "PalmOpennessDegree",
+                    "Label",
                 ]
             )
 
@@ -79,6 +81,7 @@ class GloveDataHandler:
                     args[18],
                     args[19],
                     args[21],
+                    self.gesture_num,
                 ]
             )
             # Once 3000 data points are received, save them to the CSV file
@@ -118,7 +121,7 @@ def main() -> None:
     """
     gesture_num: int = int(input("Gesture Number: "))
 
-    glove_data_handler = GloveDataHandler()
+    glove_data_handler = GloveDataHandler(gesture_num)
     glove_data_handler.csv_init(gesture_num)
 
     local_ip = get_local_ip()
