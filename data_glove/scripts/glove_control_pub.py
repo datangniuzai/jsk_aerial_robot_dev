@@ -20,6 +20,8 @@ from std_msgs.msg import UInt8
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import BlockingOSCUDPServer
 
+from base_receiver import get_local_ip
+
 
 class FingerDataPublisher:
     def __init__(self) -> None:
@@ -28,7 +30,7 @@ class FingerDataPublisher:
         and the publisher for control mode.
         """
         rospy.init_node("glove_data_pub_node", anonymous=True)
-        self.control_mode_pub = rospy.Publisher("hand/control_mode", UInt8, queue_size=10)
+        self.control_mode_pub = rospy.Publisher("/hand/control_mode", UInt8, queue_size=10)
         self.last_time_little_finger = None
         self.last_time_openness = None
         self.control_mode = 0
@@ -93,29 +95,6 @@ def shut_publisher(sig, frame) -> None:
     sys.exit(0)
 
 
-def get_local_ip() -> Optional[str]:
-    """
-    Retrieve the local IP address of the machine.
-
-    Returns:
-        Optional[str]: The local IP address if successfully retrieved;
-                       None if an error occurs.
-    """
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
-            local_ip = sock.getsockname()[0]
-
-        if not local_ip:
-            raise ValueError("Local IP address could not be retrieved.")
-
-        return local_ip
-
-    except Exception as error:
-        print(f"Error retrieving local IP address: {error}")
-        raise SystemExit("Exiting program due to error.")
-
-
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Run OSC server for Data Glove")
@@ -123,7 +102,7 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     local_ip = get_local_ip()
 
-    # Setup signal handler for graceful shutdown
+    # Setup signal: handler for graceful shutdown
     signal.signal(signal.SIGINT, shut_publisher)
 
     finger_publisher = FingerDataPublisher()
