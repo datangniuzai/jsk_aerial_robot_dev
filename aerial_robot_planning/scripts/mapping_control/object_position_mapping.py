@@ -126,11 +126,176 @@ class Glove:
 ##########################################
 class OneToOnePubJointTraj(MPCPubJointTraj):
     def __init__(
-            self,
-            robot_name: str,
-            hand: Hand,
-            arm: Arm,
-            control_mode: Glove,
+        self,
+        robot_name: str,
+        hand: Hand,
+        arm: Arm,
+        control_mode: Glove,
+    ):
+        super().__init__(robot_name=robot_name, node_name="1to1map_traj_pub")
+        self.hand = hand
+        self.arm = arm
+        self.control_mode = control_mode
+
+        self.initial_hand_position = None
+        self.initial_drone_position = None
+        self.position_change = None
+
+        self.is_finished = False
+        # initialize vel_twist and acc_twist
+        r_rate, p_rate, y_rate = 0.0, 0.0, 0.0
+        r_acc, p_acc, y_acc = 0.0, 0.0, 0.0
+        vx, vy, vz = 0.0, 0.0, 0.0
+        ax, ay, az = 0.0, 0.0, 0.0
+        self.vel_twist = Twist(linear=Vector3(vx, vy, vz), angular=Vector3(r_rate, p_rate, y_rate))
+        self.acc_twist = Twist(linear=Vector3(ax, ay, az), angular=Vector3(r_acc, p_acc, y_acc))
+
+        self._check_last_time = None
+        self._check_last_position = None
+        self._check_check_orientation = None
+        self._check_time_threshold = 5
+        self._check_position_tolerance = 0.1
+        self._check_orientation_tolerance = 6
+
+        self.last_state = None
+
+    def _check_finish_auto(self):
+        current_time = rospy.Time.now().to_sec()
+        if not hasattr(self, "last_check_time"):
+            self.last_check_time = current_time
+            self._check_last_position = [
+                self.hand.position.pose.position.x,
+                self.hand.position.pose.position.y,
+                self.hand.position.pose.position.z,
+            ]
+            self._check_check_orientation = [
+                self.hand.position.pose.orientation.x,
+                self.hand.position.pose.orientation.y,
+                self.hand.position.pose.orientation.z,
+                self.hand.position.pose.orientation.w,
+            ]
+            return
+
+        current_check_position = [
+            self.hand.position.pose.position.x,
+            self.hand.position.pose.position.y,
+            self.hand.position.pose.position.z,
+        ]
+        current_check_orientation = [
+            self.hand.position.pose.orientation.x,
+            self.hand.position.pose.orientation.y,
+            self.hand.position.pose.orientation.z,
+            self.hand.position.pose.orientation.w,
+        ]
+
+        position_change = [abs(current_check_position[i] - self._check_last_position[i]) for i in range(3)]
+
+        orientation_change = [abs(current_check_orientation[i] - self._check_check_orientation[i]) for i in range(4)]
+
+        # self._check_last_position[:] = current_check_position
+        # self._check_check_orientation[:] = current_check_orientation
+
+        goal_reached = all(change < self._check_position_tolerance for change in position_change) and all(
+            change < self._check_orientation_tolerance for change in orientation_change
+        )
+
+        new_state = "goal_reached" if goal_reached else "goal_not_reached"
+        if new_state != self.last_state:
+            rospy.loginfo("Now state: reach the goal" if goal_reached else "Now state:not reach the goal")
+            self.last_state = new_state
+
+        if goal_reached:
+            if current_time - self.last_check_time > self._check_time_threshold:
+                rospy.loginfo("Exit mapping mode")
+                self.is_finished = True
+
+        else:
+            self.last_check_time = current_time
+            self.last_hand_position = current_check_position
+            self.last_hand_orientation = current_check_orientation
+
+    def fill_trajectory_points(self, t_elapsed: float) -> MultiDOFJointTrajectory:
+
+        if self.initial_hand_position is None:
+            self.initial_hand_position = [
+                self.hand.position.pose.position.x,
+                self.hand.position.pose.position.y,
+                self.hand.position.pose.position.z,
+            ]
+            self.initial_drone_position = [
+                self.uav_odom.pose.pose.position.x,
+                self.uav_odom.pose.pose.position.y,
+                self.hand.position.pose.position.z,
+            ]
+            rospy.loginfo(f"initial drone position is {self.initial_drone_position}")
+            rospy.loginfo(f"initial hand position is {self.initial_hand_position}")
+
+        current_position = [
+            self.hand.position.pose.position.x,
+            self.hand.position.pose.position.y,
+            self.hand.position.pose.position.z,
+        ]
+
+        self.position_change = [current_position[i] - self.initial_hand_position[i] for i in range(3)]
+
+        direction = [
+            self.initial_drone_position[0] + self.position_change[0],
+            self.initial_drone_position[1] + self.position_change[1],
+            self.initial_drone_position[2] + self.position_change[2],
+        ]
+
+        hand_orientation = [
+            self.hand.position.pose.orientation.x,
+            self.hand.position.pose.orientation.y,
+            self.hand.position.pose.orientation.z,
+            self.hand.position.pose.orientation.w,
+        ]
+
+        multi_dof_joint_traj = MultiDOFJointTrajectory()
+        t_has_started = rospy.Time.now().to_sec() - self.start_time
+
+        for i in range(self.N_nmpc + 1):
+            traj_pt = MultiDOFJointTrajectoryPoint()
+            traj_pt.transforms.append(
+                Transform(
+                    translation=Vector3(*direction),
+                    rotation=Quaternion(*hand_orientation),
+                )
+            )
+            traj_pt.velocities.append(self.vel_twist)
+            traj_pt.accelerations.append(self.acc_twist)
+
+            t_pred = i * 0.1
+            t_cal = t_pred + t_has_started
+            traj_pt.time_from_start = rospy.Duration.from_sec(t_cal)
+
+            multi_dof_joint_traj.points.append(traj_pt)
+
+        return multi_dof_joint_traj
+
+    def pub_trajectory_points(self, traj_msg: MultiDOFJointTrajectory):
+        """Publish the MultiDOFJointTrajectory message."""
+        traj_msg.header.stamp = rospy.Time.now()
+        traj_msg.header.frame_id = "map"
+        self.pub_ref_traj.publish(traj_msg)
+
+    def check_finished(self, t_elapsed=None):
+        if self.control_mode:
+            if self.control_mode.control_mode == 2:
+                self.is_finished = True
+        else:
+            self._check_finish_auto()
+
+        return self.is_finished
+
+
+class ZoomControlPubJointTraj(MPCPubJointTraj):
+    def __init__(
+        self,
+        robot_name: str,
+        hand: Hand,
+        arm: Arm,
+        control_mode: Glove,
     ):
         super().__init__(robot_name=robot_name, node_name="1to1map_traj_pub")
         self.hand = hand
